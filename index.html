@@ -288,6 +288,11 @@ header p{font-size:.74rem;color:#B0A898;margin-top:2px;}
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
 .lote-item,.fi,.hi,.acerto-item{animation:fadeIn .2s ease;}
+.btn-danger{flex:1;padding:10px;background:transparent;color:#E07060;border:2px solid #E0C0B8;border-radius:9px;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;}
+.btn-danger:hover{background:#FFF0EE;border-color:#E07060;}
+.hi.archived{opacity:.5;border-style:dashed;}
+.archived-badge{display:inline-block;background:#F5F2EE;color:var(--muted);border:1px solid var(--border);border-radius:99px;font-size:.62rem;font-weight:700;padding:1px 7px;margin-left:5px;}
+.close-month-bar{display:flex;gap:8px;margin-bottom:13px;}
 </style>
 </head>
 <body>
@@ -386,6 +391,47 @@ header p{font-size:.74rem;color:#B0A898;margin-top:2px;}
   <div class="sec-lbl">Acertos realizados</div>
   <div id="acertos-list"><div class="empty" style="padding:16px">Nenhum acerto registrado ainda.</div></div>
 
+  <!-- GESTÃO DE PERÍODO -->
+  <div class="sec-lbl">Gestão de período</div>
+  <div class="close-month-bar">
+    <button class="btn-settle" onclick="openModal('fechar-mes')" style="flex:1;font-size:.8rem;">🗂️ Fechar mês</button>
+    <button class="btn-danger" onclick="openModal('limpar-tudo')">🗑️ Limpar tudo</button>
+  </div>
+
+</div>
+
+<!-- Modal Fechar Mês -->
+<div class="modal-overlay" id="modal-fechar-mes" onclick="closeModal('fechar-mes')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>🗂️ Fechar Mês</h3>
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:14px;line-height:1.6">Os lançamentos do mês selecionado serão <strong>arquivados</strong> — somem do Resumo principal mas continuam visíveis no Histórico com o status "fechado". Use quando o acerto já foi feito e você quer começar o mês limpo.</p>
+    <div class="field">
+      <label>Mês a fechar</label>
+      <select id="fechar-mes-select" style="width:100%;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.9rem;background:var(--bg);color:var(--ink);outline:none;"></select>
+    </div>
+    <div style="background:#FFF8F0;border-radius:9px;padding:10px 13px;font-size:.77rem;color:#7A5040;margin-bottom:14px;">
+      💡 Os lançamentos arquivados não entram mais no cálculo do acerto, mas ficam salvos para consulta.
+    </div>
+    <button class="btnp" onclick="fecharMes()">🗂️ Arquivar este mês</button>
+    <button class="btns" onclick="closeModal('fechar-mes')">Cancelar</button>
+  </div>
+</div>
+
+<!-- Modal Limpar Tudo -->
+<div class="modal-overlay" id="modal-limpar-tudo" onclick="closeModal('limpar-tudo')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>🗑️ Limpar Tudo</h3>
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:14px;line-height:1.6">Isso vai <strong>apagar permanentemente</strong> todos os lançamentos, acertos e histórico. Não tem como desfazer.</p>
+    <div style="background:#FFF0EE;border-radius:9px;padding:12px 13px;font-size:.82rem;color:#A04030;margin-bottom:14px;border:1.5px solid #F0C4B8;">
+      ⚠️ Esta ação é irreversível. Todos os dados serão perdidos.
+    </div>
+    <div class="field">
+      <label>Digite CONFIRMAR para prosseguir</label>
+      <input type="text" id="limpar-confirm-input" placeholder="CONFIRMAR" autocomplete="off">
+    </div>
+    <button class="btn-danger" style="width:100%;padding:12px;border-radius:10px;font-size:.91rem;" onclick="limparTudo()">🗑️ Apagar tudo permanentemente</button>
+    <button class="btns" onclick="closeModal('limpar-tudo');document.getElementById('limpar-confirm-input').value=''">Cancelar</button>
+  </div>
 </div>
 
 <!-- ═══════════════ LANÇAR ═══════════════ -->
@@ -660,6 +706,17 @@ function openModal(id){
     document.getElementById('acerto-val').value=totalGuDeve>0?totalGuDeve.toFixed(2):'';
     document.getElementById('acerto-data').value=nowD();
   }
+  if(id==='fechar-mes'){
+    // populate month select with active (non-archived) months
+    const sel=document.getElementById('fechar-mes-select');
+    const months=[...new Set(items.filter(i=>!i.archived).map(i=>i.mes))].sort().reverse();
+    sel.innerHTML=months.map(m=>{
+      const[y,mo]=m.split('-');
+      return`<option value="${m}">${new Date(y,mo-1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;
+    }).join('');
+    if(!months.length) sel.innerHTML='<option value="">Nenhum mês ativo</option>';
+  }
+  if(id==='limpar-tudo') document.getElementById('limpar-confirm-input').value='';
 }
 function closeModal(id){ document.getElementById('modal-'+id).classList.remove('show'); }
 function openSettleModal(){ openModal('acerto'); }
@@ -796,8 +853,10 @@ function fmtMes(m){if(!m)return'—';const[y,mo]=m.split('-');return new Date(y,
 function getHS(cat,pct){if(cat==='outro')return(parseFloat(pct)||50)/100;return CATS[cat]?.hs??0.5;}
 
 function calcBalance(filtered){
+  // exclude archived items from active balance
+  const active=filtered.filter(i=>!i.archived);
   let guDueFin=0,guDueFat=0,guDueObra=0,guDueOutro=0,guPaidDirect=0;
-  filtered.forEach(i=>{
+  active.forEach(i=>{
     const gs=i.valor*i.himShare;
     if(i.cat==='fin')guDueFin+=gs;
     else if(i.cat==='fat')guDueFat+=gs;
@@ -852,6 +911,12 @@ function deleteItem(id){
   if(window._fbReady) window._deleteItem(id);
   updateResumo();renderHist();renderCharts();
 }
+async function reativarItem(id){
+  items=items.map(i=>i.id===id?{...i,archived:false}:i);
+  window.items=items; save();
+  if(window._fbReady){ const item=items.find(i=>i.id===id); if(item) await window._saveItem(item); }
+  updateResumo(); renderHist();
+}
 function startEditDesc(id){
   document.getElementById('desc-text-'+id).style.display='none';
   const inp=document.getElementById('desc-inp-'+id);
@@ -877,11 +942,20 @@ function updateResumo(){
   const sel=document.getElementById('resumo-mes');
   const prev=sel.value;
   const months=[...new Set(items.map(i=>i.mes))].sort().reverse();
-  sel.innerHTML='<option value="">Todos</option>';
-  months.forEach(m=>{const[y,mo]=m.split('-');const o=document.createElement('option');o.value=m;o.textContent=new Date(y,mo-1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});sel.appendChild(o);});
+  const activeMonths=[...new Set(items.filter(i=>!i.archived).map(i=>i.mes))];
+  sel.innerHTML='<option value="">Ativos</option>';
+  months.forEach(m=>{
+    const[y,mo]=m.split('-');
+    const o=document.createElement('option');
+    o.value=m;
+    const isArchived=!activeMonths.includes(m);
+    o.textContent=new Date(y,mo-1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})+(isArchived?' (arquivado)':'');
+    sel.appendChild(o);
+  });
   sel.value=prev;
   const fm=sel.value;
-  const filtered=fm?items.filter(i=>i.mes===fm):items;
+  // default "Ativos" shows only non-archived; specific month shows all of that month
+  const filtered=fm?items.filter(i=>i.mes===fm):items.filter(i=>!i.archived);
   // always use latest from Firebase sync
   items = window.items || items;
   acertos = window.acertos || acertos;
@@ -906,10 +980,11 @@ function updateResumo(){
   }
 
   // BREAKDOWN
-  document.getElementById('bk-fin').textContent=fmt(filtered.filter(i=>i.cat==='fin').reduce((a,b)=>a+b.valor,0));
-  document.getElementById('bk-fat').textContent=fmt(filtered.filter(i=>i.cat==='fat').reduce((a,b)=>a+b.valor,0));
-  document.getElementById('bk-obra').textContent=fmt(filtered.filter(i=>i.cat==='obra').reduce((a,b)=>a+b.valor,0));
-  document.getElementById('bk-outro').textContent=fmt(filtered.filter(i=>i.cat==='outro').reduce((a,b)=>a+b.valor,0));
+  const active2=filtered.filter(i=>!i.archived);
+  document.getElementById('bk-fin').textContent=fmt(active2.filter(i=>i.cat==='fin').reduce((a,b)=>a+b.valor,0));
+  document.getElementById('bk-fat').textContent=fmt(active2.filter(i=>i.cat==='fat').reduce((a,b)=>a+b.valor,0));
+  document.getElementById('bk-obra').textContent=fmt(active2.filter(i=>i.cat==='obra').reduce((a,b)=>a+b.valor,0));
+  document.getElementById('bk-outro').textContent=fmt(active2.filter(i=>i.cat==='outro').reduce((a,b)=>a+b.valor,0));
   document.getElementById('bk-fin-gu').textContent='Gu: '+fmt(guDueFin);
   document.getElementById('bk-fat-gu').textContent='Gu: '+fmt(guDueFat);
   document.getElementById('bk-obra-gu').textContent='Gu: '+fmt(guDueObra);
@@ -958,20 +1033,20 @@ function renderHist(){
     const hp=Math.round(item.herShare*100);
     const cfg=CATS[item.cat]||CATS.outro;
     const guVal=item.valor*item.himShare;
-    return`<div class="hi">
-      <div class="hidot" style="background:${cfg.col}"></div>
+    return`<div class="hi ${item.archived?'archived':''}">
+      <div class="hidot" style="background:${item.archived?'#CCC':cfg.col}"></div>
       <div class="hibody">
         <div class="hidesc">
           <span id="desc-text-${item.id}" onclick="startEditDesc(${item.id})" style="cursor:pointer;border-bottom:1px dashed #E0D8CC" title="Clique para editar">${(sI[item.source]||'')+item.desc}</span>
           <input id="desc-inp-${item.id}" class="desc-inp" value="${item.desc}" onkeydown="if(event.key==='Enter')saveDesc(${item.id});if(event.key==='Escape')renderHist();">
         </div>
-        <div class="himeta">${cfg.lbl} · ${hp}%/${100-hp}% · ${wL[item.who]||'Ale'} · ${ms}</div>
+        <div class="himeta">${cfg.lbl} · ${hp}%/${100-hp}% · ${wL[item.who]||'Ale'} · ${ms}${item.archived?'<span class="archived-badge">arquivado</span>':''}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div class="hiamt" style="${item.estorno?'color:#2AA87A':''}">${item.estorno?'−':''}${fmt(item.valor)}</div>
         <div class="hi-gu" style="${item.estorno?'color:#2AA87A':''}">${item.estorno?'↩':'Gu:'} ${item.estorno?fmt(Math.abs(item.valor)):fmt(guVal)}</div>
       </div>
-      <button class="hidel" id="desc-btn-${item.id}" onclick="startEditDesc(${item.id})" title="Editar">✏️</button>
+      ${item.archived?`<button class="hidel" title="Reativar" onclick="reativarItem(${item.id})" style="color:#5A8A5A">↩</button>`:`<button class="hidel" id="desc-btn-${item.id}" onclick="startEditDesc(${item.id})" title="Editar">✏️</button>`}
       <button class="hidel" onclick="deleteItem(${item.id})">✕</button>
     </div>`;
   }).join('');
@@ -1324,6 +1399,54 @@ function resetFatura(){
   uz.addEventListener('dragleave',()=>uz.classList.remove('drag'));
   uz.addEventListener('drop',e=>{e.preventDefault();uz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handler({target:{files:e.dataTransfer.files}});});
 });
+
+// ─────────────────────────────────────────────────────────
+// FECHAR MÊS / LIMPAR
+// ─────────────────────────────────────────────────────────
+async function fecharMes(){
+  const mes=document.getElementById('fechar-mes-select').value;
+  if(!mes){alert('Selecione um mês.');return;}
+  const [y,mo]=mes.split('-');
+  const mesLabel=new Date(y,mo-1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  if(!confirm(`Arquivar ${mesLabel}? Os lançamentos sumirão do Resumo mas ficarão no Histórico.`))return;
+  
+  // mark items of that month as archived
+  items=items.map(i=>i.mes===mes?{...i,archived:true}:i);
+  window.items=items; save();
+  
+  // update Firebase
+  if(window._fbReady){
+    const toArchive=items.filter(i=>i.mes===mes&&i.archived);
+    for(const item of toArchive){ await window._saveItem(item); }
+  }
+  
+  closeModal('fechar-mes');
+  updateResumo(); renderHist();
+  // show success
+  const btn=document.querySelector('.close-month-bar .btn-settle');
+  const orig=btn.textContent; btn.textContent='✅ Mês arquivado!'; btn.style.background='var(--green)';
+  setTimeout(()=>{btn.textContent=orig;btn.style.background='';},2500);
+}
+
+async function limparTudo(){
+  const input=document.getElementById('limpar-confirm-input').value.trim();
+  if(input!=='CONFIRMAR'){alert('Digite exatamente CONFIRMAR para prosseguir.');return;}
+  
+  // delete all from Firebase
+  if(window._fbReady){
+    for(const item of items){ await window._deleteItem(item.id); }
+    for(const acerto of acertos){ await window._deleteAcerto(acerto.id); }
+  }
+  
+  // clear local state
+  items=[]; acertos=[]; window.items=[]; window.acertos=[];
+  save(); saveAcertosStore();
+  closeModal('limpar-tudo');
+  updateResumo(); renderHist(); renderAcertos();
+  
+  const btn=document.querySelector('.btn-danger');
+  alert('✅ Todos os dados foram apagados.');
+}
 
 // ─────────────────────────────────────────────────────────
 // INIT
